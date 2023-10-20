@@ -1,0 +1,19 @@
+dataCard1:
+  title: "COVID-19 Trends in New York State"
+  datasource:
+    type: "API"
+    endpoint: "https://covid-api.example.com/new-york"
+  query:
+    fields: 
+      - "date"
+      - "confirmed_cases"
+      - "deaths"
+    filters:
+      - "date >= '2022-01-01'"
+  visualization:
+    type: "chart"
+    x_axis: "date"
+    y_axis: 
+      - "confirmed_cases"
+      - "deaths"
+    chart_type: "line"

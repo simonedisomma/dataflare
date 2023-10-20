@@ -1,0 +1,13 @@
+# requirements.txt
+
+# Data manipulation and analysis
+pandas==1.3.3
+
+# YAML parser
+PyYAML==5.4.1
+
+# For rendering ECharts
+pyecharts==1.9.0
+
+# For API calls if your datacard uses an API source
+requests==2.26.0
