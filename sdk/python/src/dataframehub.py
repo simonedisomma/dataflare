@@ -1,6 +1,6 @@
 # dfhub.py
 import yaml
-from dataframe.sqllite_driver import SQLiteDriver
+from dataset.sqllite_driver import SQLiteDriver
 
 class DataFrameHub:
 
