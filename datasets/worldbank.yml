@@ -1,0 +1,5 @@
+dataset:
+  driver: SQLiteDriver
+  db_url: "sqlite:///worldbank.db"
+  queries:
+    revenue_by_countries: "SELECT * FROM revenue WHERE metric='countries'"
