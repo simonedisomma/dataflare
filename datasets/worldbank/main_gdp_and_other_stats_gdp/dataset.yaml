@@ -1,0 +1,47 @@
+# datasets/worldbank/gdp/config.yaml
+
+name: worldbank_gdp
+description: "World Bank GDP and other related statistics"
+source:
+  type: api
+  base_url: "http://api.worldbank.org/v2"
+  endpoint: "/country/all/indicator/NY.GDP.MKTP.CD"
+
+workflow:
+  file: workflow.py
+  class: WorldBankGDPWorkflow
+
+storage:
+  type: parquet
+  file_name: worldbank_gdp.parquet
+
+binding:
+  type: duckdb
+  table_name: worldbank_gdp
+
+schema:
+  - name: country
+    type: string
+    description: "Country name"
+  - name: country_code
+    type: string
+    description: "ISO 3166-1 alpha-3 country code"
+  - name: year
+    type: int
+    description: "Year of the observation"
+  - name: gdp
+    type: float
+    description: "GDP in current US$"
+
+transformations:
+  - name: gdp_millions
+    type: derived
+    sql: "gdp / 1000000"
+    description: "GDP in millions of current US$"
+
+metadata:
+  update_frequency: daily
+  last_updated: "2023-08-26"
+  version: "1.0"
+  license: "CC-BY-4.0"
+  attribution: "World Bank Open Data"

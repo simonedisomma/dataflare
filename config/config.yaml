@@ -1,0 +1,17 @@
+# config/config.yaml
+
+datasets:
+  - path: datasets/worldbank/main_gdp_and_other_stats_gdp.yaml
+  # Add more dataset paths as needed
+
+storage:
+  type: parquet
+  directory: ./data/parquet
+
+data_binding:
+  type: duckdb
+  database: ./data/main.db
+
+api:
+  host: 0.0.0.0
+  port: 8000
