@@ -1,0 +1,13 @@
+name: us_labor_unemployment_rate
+description: Monthly US unemployment rate
+class: USLaborUnemploymentRateWorkflow
+params:
+  api_url: https://api.bls.gov/publicAPI/v2/timeseries/data/
+  api_key: e8528efd3a454a459ca5273412292651
+
+frequency: monthly
+columns:
+  - name: date
+    type: date
+  - name: unemployment_rate
+    type: float

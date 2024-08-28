@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 import pandas as pd
 from datetime import datetime
+from typing import Any  
 
 class BaseWorkflow(ABC):
     def __init__(self, name: str):
