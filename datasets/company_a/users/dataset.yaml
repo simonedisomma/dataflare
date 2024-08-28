@@ -1,0 +1,8 @@
+connection: ':memory:'
+location: users
+name: users
+schema:
+- id INTEGER
+- name VARCHAR
+- age INTEGER
+- email VARCHAR

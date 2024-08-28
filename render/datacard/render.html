@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cancer Survival Rates Datacard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/dompurify@2.3.3/dist/purify.min.js"></script>
+    <script src="https://unpkg.com/@radix-ui/react-primitive@1.0.0/dist/index.umd.js"></script>
+    <script src="https://unpkg.com/lucide-react@0.244.0/dist/umd/lucide-react.min.js"></script>
+    <script src="https://unpkg.com/react-zoom-pan-pinch@2.1.3/dist/react-zoom-pan-pinch.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { Chart } = window.Chart;
+
+        // Query from YAML definition
+        const query = {
+            table: "cancer_survival_rates",
+            fields: ["cancer_site", "survival_rate"],
+            order_by: ["survival_rate"]
+        };
+
+        function CancerSurvivalRatesDatacard() {
+            const [data, setData] = useState(null);
+
+            useEffect(() => {
+                fetchData();
+            }, []);
+
+            const fetchData = async () => {
+                try {
+                    const response = await fetch('/datacard');
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const result = await response.json();
+                    setData(result.data);
+                } catch (error) {
+                    console.error('Error fetching data:', error);
+                    setData(null); // Set data to null to show an error state
+                }
+            };
+
+            useEffect(() => {
+                if (data) {
+                    const ctx = document.getElementById('survivalRateChart').getContext('2d');
+                    new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: data.map(item => item.cancer_site),
+                            datasets: [{
+                                label: 'Survival Rate (%)',
+                                data: data.map(item => item.survival_rate),
+                                backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                                borderColor: 'rgba(75, 192, 192, 1)',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    max: 100
+                                }
+                            }
+                        }
+                    });
+                }
+            }, [data]);
+
+            if (!data) return <div>Error loading data. Please try again later.</div>;
+
+            return (
+                <div className="container mx-auto p-4">
+                    <h1 className="text-2xl font-bold mb-2">US five-year relative survival rate (%) by cancer site</h1>
+                    <p className="text-gray-600 mb-4">Around seven in every eight pancreatic cancer patients die within five years of diagnosis</p>
+                    <div className="bg-white p-4 rounded shadow">
+                        <canvas id="survivalRateChart"></canvas>
+                    </div>
+                    <div className="mt-4">
+                        <h2 className="text-xl font-semibold mb-2">Sources:</h2>
+                        <ul className="list-disc pl-5">
+                            <li>
+                                <a href="https://seer.cancer.gov/statistics/types/survival.html" className="text-blue-600 hover:underline">
+                                    SEER Incidence Data, National Cancer Institute
+                                </a>
+                            </li>
+                            <li>Modelled rates from 2021</li>
+                        </ul>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(
+            <CancerSurvivalRatesDatacard />,
+            document.getElementById('root')
+        );
+    </script>
+</body>
+</html>

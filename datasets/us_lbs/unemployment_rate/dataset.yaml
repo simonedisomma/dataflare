@@ -11,3 +11,8 @@ columns:
     type: date
   - name: unemployment_rate
     type: float
+
+database:
+  type: duckdb
+  file: us_labor_unemployment_rate.duckdb
+  table: us_labor_unemployment_rate

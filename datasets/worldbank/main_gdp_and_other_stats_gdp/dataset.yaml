@@ -11,13 +11,10 @@ workflow:
   file: workflow.py
   class: WorldBankGDPWorkflow
 
-storage:
-  type: parquet
-  file_name: worldbank_gdp.parquet
-
-binding:
+database:
   type: duckdb
-  table_name: worldbank_gdp
+  file: worldbank_gdp.duckdb
+  table: worldbank_gdp
 
 schema:
   - name: country

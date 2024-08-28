@@ -1,0 +1,14 @@
+title: "US Monthly Unemployment Rate"
+subtitle: "Tracking unemployment trends in the United States"
+query:
+  table: "us_labor_unemployment_rate"
+  fields: ["date", "unemployment_rate"]
+  order_by: ["date"]
+xAxis: "date"
+yAxis: "unemployment_rate"
+chart_type: "line"
+date_format: "%Y-%m"
+sources:
+  - name: "U.S. Bureau of Labor Statistics"
+    link: "https://www.bls.gov/cps/home.htm"
+  - name: "Data retrieved via BLS Public API"

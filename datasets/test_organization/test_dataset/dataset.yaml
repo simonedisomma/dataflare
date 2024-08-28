@@ -1,0 +1,6 @@
+connection: ':memory:'
+location: test_dataset
+name: test_dataset
+schema:
+- id INTEGER
+- name TEXT

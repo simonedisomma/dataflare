@@ -1,8 +1,8 @@
 import pytest
-import duckdb
 import json
-from api.query_api import QueryAPI
-from data_binding.duckdb_engine import DuckDBEngine
+from data_binding.database_engine import ConnectionManager
+from api.services import QueryService
+from api.query import QueryBuilder
 
 @pytest.fixture
 def sample_data():
@@ -13,61 +13,59 @@ def sample_data():
     ]
 
 @pytest.fixture
-def query_api(sample_data):
-    # Use DuckDBEngine utils to create test data
-    query_engine = DuckDBEngine(':memory:')
-    query_engine.create_table("users", ["id INTEGER", "name VARCHAR", "age INTEGER", "email VARCHAR"])
-    query_engine.insert_data("users", sample_data)
+def query_service(sample_data):
+    connection_config = {'driver': 'duckdb', 'db_path': ':memory:'}
+    connection_manager = ConnectionManager.create(connection_config)
+    
+    connection_manager.register_dataset("company_a", "users", ["id INTEGER", "name VARCHAR", "age INTEGER", "email VARCHAR"])
+    connection_manager.add_records("company_a", "users", sample_data)
 
-    return QueryAPI(query_engine)
+    return QueryService(connection_manager)
 
-def test_query_builder(query_api):
-    result = query_api.execute(
-        query_api.query()
-            .from_table("users")
-            .select("name", "email")
-            .where("age > 25")
-            .order_by("name")
-            .limit(2)
+def test_query_builder(query_service):
+    query_builder = (QueryBuilder()
+        .from_table("users")
+        .select("name", "email")
+        .where("age > 25")
+        .order_by("name")
+        .limit(2)
     )
+    result = query_service.execute_query(query_builder.build())
 
-    print(f"Query builder result: {result}")  # For debugging
     assert len(result) == 2
     assert all("name" in item and "email" in item for item in result)
-    print(f"Actual result: {json.dumps(result, indent=2)}")  # Print the actual result
+    print(f"Query builder result: {json.dumps(result, indent=2)}")
 
-def test_query_chaining(query_api):
-    query = (query_api.query()
+def test_query_chaining(query_service):
+    query_builder = (QueryBuilder()
         .from_table("users")
         .select("name")
         .where("age > 30")
-        .select("email")  # We can chain multiple selects
+        .select("email")
     )
     
-    result = query_api.execute(query)
+    result = query_service.execute_query(query_builder.build())
 
-    print(f"Query chaining result: {result}")  # For debugging
     assert len(result) == 1  # Only Charlie should be over 30
     assert "name" in result[0] and "email" in result[0]
     assert result[0]["name"] == "Charlie"
-    print(f"Actual result: {json.dumps(result, indent=2)}")  # Print the actual result
+    print(f"Query chaining result: {json.dumps(result, indent=2)}")
 
-def test_empty_query(query_api):
-    result = query_api.execute(query_api.query().from_table("users"))
-    print(f"Empty query result: {result}")  # For debugging
+def test_empty_query(query_service):
+    query_builder = QueryBuilder().from_table("users")
+    result = query_service.execute_query(query_builder.build())
     assert len(result) == 3  # Should return all data when no fields are specified
-    print(f"Actual result: {json.dumps(result, indent=2)}")  # Print the actual result
+    print(f"Empty query result: {json.dumps(result, indent=2)}")
 
-def test_simple_query(query_api):
-    result = query_api.execute(
-        query_api.query()
-            .from_table("users")
-            .select("name", "email")
+def test_simple_query(query_service):
+    query_builder = (QueryBuilder()
+        .from_table("users")
+        .select("name", "email")
     )
+    result = query_service.execute_query(query_builder.build())
+    print(f"Simple query result: {json.dumps(result, indent=2)}")
 
-    print(f"Simple query result: {result}")  # For debugging
     assert len(result) == 3
     assert all("name" in item and "email" in item for item in result)
     assert result[0]["name"] == "Alice"
     assert result[0]["email"] == "alice@example.com"
-    print(f"Actual result: {json.dumps(result, indent=2)}")  # Print the actual result

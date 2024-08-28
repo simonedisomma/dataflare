@@ -2,13 +2,13 @@
 
 import yaml
 import os
+from tqdm import tqdm
 from importlib.util import spec_from_file_location, module_from_spec
 from workflow_manager.manager import WorkflowManager
-from data_storage.parquet_storage import ParquetStorage
-from data_binding.duckdb_binder import DuckDBBinder
-from data_binding.query_engine import QueryEngine
-from api.query_api import QueryAPI
-from tqdm import tqdm
+from data_binding.database_engine import ConnectionManager
+from app import start_server, stop_server
+from utils.config_loader import load_config
+
 
 def load_dataset_config(path: str) -> dict:
     with open(path, 'r') as file:
@@ -45,37 +45,12 @@ def initialize_workflows(datasets_path: str) -> WorkflowManager:
             print(f"Error loading workflow from {config_path}: {str(e)}")
     return manager
 
-def initialize_storage(base_path: str = 'data/parquet') -> ParquetStorage:
-    return ParquetStorage(base_path)
-
-def initialize_data_binding(db_path: str = 'data/main.db') -> DuckDBBinder:
-    try:
-        return DuckDBBinder(db_path)
-    except RuntimeError as e:
-        print(f"Error initializing DuckDB: {e}")
-        print("Creating a new database file.")
-        return DuckDBBinder(':memory:')  # Use in-memory database as fallback
-
-def initialize_api(query_engine: QueryEngine, host: str = '0.0.0.0', port: int = 8000) -> QueryAPI:
-    # Initialize API
-    api = QueryAPI(query_engine)
-    api.set_host_and_port(host, port)
-    return api
-
-    # Initialize components
-    workflow_manager = initialize_workflows('datasets')
-    storage = initialize_storage()
-    data_binder = initialize_data_binding()
 
 def main():
-    # Ensure data directory exists
-    os.makedirs('data', exist_ok=True)
+    config = load_config()
 
     # Initialize components
     workflow_manager = initialize_workflows('datasets')
-    storage = initialize_storage()
-    data_binder = initialize_data_binding()
-    query_engine = data_binder.get_query_engine()
 
     # Get total number of workflows
     total_workflows = len(workflow_manager.workflows)
@@ -87,21 +62,6 @@ def main():
             results[name] = workflow.run()
             pbar.update(1)
 
-    # Store results with progress bar
-    with tqdm(total=len(results), desc="Storing results") as pbar:
-        for name, data in results.items():
-            storage.save(name, data)
-            pbar.update(1)
-
-    # Bind data only if Parquet files exist
-    if os.listdir(storage.directory):
-        data_binder.bind_all(storage.directory)
-        
-        # Initialize and start API
-        api = initialize_api(query_engine=query_engine)
-  
-    else:
-        print("No data files found. Skipping data binding and API initialization.")
 
     # Display workflow metadata
     print("\nWorkflow Metadata:")
