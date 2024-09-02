@@ -2,6 +2,9 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 from api.query import QueryModel  
 from utils.config_loader import load_dataset_definition
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ConnectionManager(ABC):
     _engines = {}
@@ -78,4 +81,44 @@ class ConnectionManager(ABC):
             cursor = conn.cursor()
             cursor.execute(query)
             return cursor.fetchall()
-    
+
+class ConcreteConnectionManager(ConnectionManager):
+    def __init__(self, connection_config):
+        super().__init__(connection_config)
+        # Any additional initialization for ConcreteConnectionManager
+
+    def add_records(self):
+        # Implement the method
+        pass
+
+    def close_connection(self):
+        # Implement the method
+        pass
+
+    def drop_dataset(self):
+        # Implement the method
+        pass
+
+    def execute_query_on_dataset(self, organization: str, dataset_name: str, query_model: QueryModel):
+        logger.debug(f"Executing query on dataset: {organization}/{dataset_name}")
+        logger.debug(f"Query model: {query_model}")
+        
+        # TODO: Implement actual query execution logic here
+        # For now, let's return some mock data
+        mock_data = [
+            {"date": "2023-01-01", "unemployment_rate": 5.4},
+            {"date": "2023-02-01", "unemployment_rate": 5.3},
+            {"date": "2023-03-01", "unemployment_rate": 5.2},
+        ]
+        
+        logger.debug(f"Query result (mock data): {mock_data}")
+        return mock_data
+
+    def get_connection(self):
+        # Implement the method
+        pass
+
+    def register_dataset(self):
+        # Implement the method
+        pass
+

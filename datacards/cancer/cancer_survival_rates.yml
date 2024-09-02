@@ -2,7 +2,7 @@ title: "US five-year relative survival rate (%) by cancer site"
 subtitle: "Around seven in every eight pancreatic cancer patients die within five years of diagnosis"
 query:
   table: "cancer_survival_rates"
-  fields: ["cancer_site", "survival_rate"]
+  select: ["cancer_site", "survival_rate"]
   order_by: ["survival_rate"]
 xAxis: "cancer_site"
 yAxis: "survival_rate"

@@ -2,7 +2,7 @@ title: "US Monthly Unemployment Rate"
 subtitle: "Tracking unemployment trends in the United States"
 query:
   table: "us_labor_unemployment_rate"
-  fields: ["date", "unemployment_rate"]
+  select: ["date", "unemployment_rate"]
   order_by: ["date"]
 xAxis: "date"
 yAxis: "unemployment_rate"
