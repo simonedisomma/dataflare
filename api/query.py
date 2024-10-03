@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 
 class QueryModel(BaseModel):
+    description: str = Field(..., description="Description of the query")
     select: List[str] = Field(default_factory=list)
     where: Optional[str] = None
     order_by: Optional[List[str]] = Field(default_factory=list)

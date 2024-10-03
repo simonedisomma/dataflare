@@ -2,33 +2,30 @@ from data_binding.database_engine import ConnectionManager
 from api.query import QueryModel, QueryBuilder
 from typing import List, Dict, Any
 import logging
-import yaml
-import os
+from utils.config_loader import load_config
 
 logger = logging.getLogger(__name__)
 
 class QueryService:
-    def __init__(self, connection_manager: ConnectionManager):
-        self.connection_manager = connection_manager
+    def __init__(self):
+        config = load_config()
+        connection_config = config.get('connection', {})
+        self.connection_manager = ConnectionManager.create(connection_config)
 
     def create_query(self) -> QueryBuilder:
         return QueryBuilder()
 
-    def execute_query(self, query_model: QueryModel) -> List[Dict[str, Any]]:
-        result = self.connection_manager.execute_query(query_model)
-        print(f"Debug: Query result before returning: {result}")
-        return result
-    
-    def execute_query_on_dataset(self, query_model: QueryModel, organization: str, dataset_name: str) -> List[Dict[str, Any]]:
-        logger.debug(f"Executing query on dataset: {organization}/{dataset_name}")
-        logger.debug(f"Query model: {query_model}")
+    def execute_query_on_dataset(self, query_model, organization, dataset):
         try:
-            result = self.connection_manager.execute_query_on_dataset(organization, dataset_name, query_model)
-            logger.debug(f"Query result: {result}")
-            return result
+            if isinstance(query_model, dict):
+                query_model = QueryModel(**query_model)
+            
+            logger.debug(f"Executing query: {query_model}")
+            result = self.connection_manager.execute_query_on_dataset(organization, dataset, query_model)
+            return {"result": result, "query_model": query_model.dict()}
         except Exception as e:
-            logger.exception(f"Error executing query: {str(e)}")
-            raise
+            logger.error(f"Error executing query: {str(e)}", exc_info=True)
+            return {"error": str(e), "query_model": query_model.dict() if isinstance(query_model, QueryModel) else query_model}
 
 class DatacardService:
     def __init__(self, connection_manager: ConnectionManager):

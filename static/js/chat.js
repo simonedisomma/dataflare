@@ -89,8 +89,16 @@ function processLLMResponse(response, chatMessagesElement, onCommandExecuted) {
 }
 
 let chatHistory = [];
+let datasets = [];
+let datacards = [];
 
-async function sendMessage(message, chatMessages, isCommandResult = false) {
+// Add this function definition
+function onCommandExecuted(command, result) {
+    console.log(`Command ${command} executed with result:`, result);
+    // You can add more logic here to handle the command execution result
+}
+
+async function sendMessage(message, chatMessages) {
     try {
         const formData = new FormData();
         formData.append('message', message);
@@ -102,41 +110,44 @@ async function sendMessage(message, chatMessages, isCommandResult = false) {
         });
 
         const data = await response.json();
+        console.log("Received data from backend:", data);
 
         if (response.status !== 200) {
             throw new Error(data.error || 'An error occurred');
         }
 
-        const { processedResponse, commandCards } = processLLMResponse(data.message, chatMessages, async (command, result) => {
-            await sendMessage(JSON.stringify({ command, result }), chatMessages, true);
-        });
-
-        // Add processed LLM response to chat
-        if (processedResponse.trim()) {
-            const llmMessageElement = document.createElement('div');
-            llmMessageElement.className = 'p-3 rounded-lg bg-gray-100 text-gray-800 my-2';
-            llmMessageElement.textContent = processedResponse;
-            chatMessages.appendChild(llmMessageElement);
-
-            // Update chat history
-            if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'assistant') {
-                chatHistory[chatHistory.length - 1].content += '\n' + processedResponse;
-            } else {
-                chatHistory.push({ role: 'assistant', content: processedResponse });
-            }
+        // Parse retrieved information from the message text
+        const parsedInfo = parseRetrievedInformation(data.message);
+        console.log("Parsed information:", parsedInfo);
+        
+        // Update datasets and datacards
+        if (parsedInfo.datasets.length > 0) {
+            datasets = [...new Set([...datasets, ...parsedInfo.datasets.map(d => d.name)])];
         }
+        if (parsedInfo.datacards.length > 0) {
+            datacards = [...new Set([...datacards, ...parsedInfo.datacards.map(d => d.name)])];
+        }
+        
+        console.log("Updated datasets:", datasets);
+        console.log("Updated datacards:", datacards);
+        
+        // Always call updateSidebar, even if no new information was added
+        updateSidebar();
 
-        // Add command cards
+        // Process LLM response
+        const { processedResponse, commandCards } = processLLMResponse(data.message, chatMessages, onCommandExecuted);
+
+        // Add LLM response to chat
+        const llmMessageElement = document.createElement('div');
+        llmMessageElement.className = 'p-3 rounded-lg bg-gray-100 text-gray-800 my-2';
+        llmMessageElement.innerHTML = processedResponse;
+        chatMessages.appendChild(llmMessageElement);
+
+        // Append command cards
         commandCards.forEach(card => chatMessages.appendChild(card));
 
-        // If there are command cards, wait for all of them to be executed
-        if (commandCards.length > 0) {
-            await Promise.all(commandCards.map(card => {
-                return new Promise(resolve => {
-                    card.addEventListener('command-executed', resolve, { once: true });
-                });
-            }));
-        }
+        // Update chat history
+        chatHistory.push({ role: 'assistant', content: data.message });
 
     } catch (error) {
         console.error('Error:', error);
@@ -147,6 +158,58 @@ async function sendMessage(message, chatMessages, isCommandResult = false) {
     }
 
     chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function parseRetrievedInformation(message) {
+    const retrievedInfoMatch = message.match(/Retrieved Information:(.+?)(?=AI Response:)/s);
+    if (!retrievedInfoMatch) return { datasets: [], datacards: [] };
+
+    const retrievedInfo = retrievedInfoMatch[1];
+    const datasetsMatch = retrievedInfo.match(/Datasets:\s*(.+?)(?=\s*Measures:|$)/s);
+    const measuresMatch = retrievedInfo.match(/Measures:\s*(.+?)(?=\s*Dimensions:|$)/s);
+    const dimensionsMatch = retrievedInfo.match(/Dimensions:\s*(.+?)(?=\s*Datacards:|$)/s);
+    const datacardsMatch = retrievedInfo.match(/Datacards:\s*(.+?)(?=\s*$)/s);
+
+    const datasets = datasetsMatch ? [
+        {
+            name: datasetsMatch[1].trim().replace(/^-\s*/, ''),
+            description: "Monthly US unemployment rate",
+            measures: measuresMatch ? measuresMatch[1].split(',').map(m => m.trim()) : [],
+            dimensions: dimensionsMatch ? dimensionsMatch[1].split(',').map(d => d.trim()) : []
+        }
+    ] : [];
+
+    const datacards = datacardsMatch ? datacardsMatch[1].split('-').map(d => {
+        const [name, description] = d.split(':').map(s => s.trim());
+        return { name: name.replace(/^-\s*/, ''), description };
+    }).filter(d => d.name && d.name !== "Unnamed datacard") : [];
+
+    return { datasets, datacards };
+}
+
+function updateSidebar() {
+    console.log("Updating sidebar");
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) {
+        console.error("Sidebar element not found");
+        return;
+    }
+    
+    sidebar.innerHTML = `
+        <div class="mb-6">
+            <h2 class="font-bold text-lg mb-2">Datasets</h2>
+            <ul class="list-disc pl-5">
+                ${datasets.map(dataset => `<li>${dataset}</li>`).join('')}
+            </ul>
+        </div>
+        <div>
+            <h2 class="font-bold text-lg mb-2">Datacards</h2>
+            <ul class="list-disc pl-5">
+                ${datacards.map(datacard => `<li>${datacard}</li>`).join('')}
+            </ul>
+        </div>
+    `;
+    console.log("Sidebar updated");
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -176,4 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         await sendMessage(userMessage, chatMessages);
     });
+
+    // Initialize sidebar
+    updateSidebar();
 });

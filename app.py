@@ -22,6 +22,7 @@ from services.chat_service import ChatService
 from services.search_service import SearchService
 from services.llm_service import LLMService
 import json
+from utils.connection_manager import get_connection_manager
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ def get_connection_manager():
     return ConcreteConnectionManager(connection_config)
 
 def get_query_service(connection_manager: ConnectionManager = Depends(get_connection_manager)):
-    return QueryService(connection_manager)
+    return QueryService()
 
 def get_datacard_service(connection_manager: ConnectionManager = Depends(get_connection_manager)):
     return DatacardService(connection_manager)
@@ -63,11 +64,24 @@ async def query(
     service: QueryService = Depends(get_query_service)
 ):
     try:
+        logger.debug(f"Received query for {organization}/{dataset}: {query_model}")
+        
+        if not query_model.description:
+            raise ValueError("Query description is required")
+        
         result = service.execute_query_on_dataset(query_model, organization, dataset)
+        
+        if not result:
+            return JSONResponse(content={"message": "No data found for the given query"}, status_code=404)
+        
+        logger.debug(f"Query result: {result}")
         return result
+    except ValueError as ve:
+        logger.error(f"Invalid query: {str(ve)}")
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        logger.error(f"Error in query endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in query endpoint: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
 @app.get("/datacard/{organization}/{definition}", response_class=HTMLResponse)
 async def render_datacard(organization: str, definition: str):
@@ -100,8 +114,8 @@ async def get_datacard_definition(
 print(f"ANTHROPIC_API_KEY is {'set' if os.environ.get('ANTHROPIC_API_KEY') else 'not set'}")
 
 search_service = SearchService()
-query_service = QueryService(get_connection_manager())
-chat_service = ChatService(search_service, query_service)
+query_service = QueryService()
+chat_service = ChatService()
 
 @app.post("/api/chat")
 async def chat(request: Request):
@@ -118,10 +132,30 @@ async def chat(request: Request):
     chat_history = json.loads(form_data.get('chat_history', '[]'))  # Get chat history from form data
     
     try:
+        logger.debug(f"Processing message: {message}")
+        logger.debug(f"Chat history: {chat_history}")
         response = chat_service.process_message(message, chat_history)
-        return JSONResponse(content={"message": response})
+        logger.debug(f"Response generated: {response}")
+        
+        # Add this block to log the structure of the response
+        logger.debug("Response structure:")
+        logger.debug(f"Type: {type(response)}")
+        
+        # Ensure we're sending the correct structure
+        if isinstance(response, str):
+            return JSONResponse(content={
+                "message": response,
+                "retrieved_information": ""
+            })
+        elif isinstance(response, dict):
+            return JSONResponse(content={
+                "message": response.get("message", ""),
+                "retrieved_information": response.get("retrieved_information", "")
+            })
+        else:
+            raise ValueError(f"Unexpected response type: {type(response)}")
     except Exception as e:
-        logger.error(f"Error processing chat message: {str(e)}")
+        logger.error(f"Error processing chat message: {str(e)}", exc_info=True)
         return JSONResponse(content={"error": f"An error occurred: {str(e)}"}, status_code=500)
 
 @app.get("/api/search_dataset")

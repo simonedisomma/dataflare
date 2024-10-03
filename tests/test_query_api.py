@@ -1,6 +1,6 @@
-import pytest
+import unittest
+from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
-from app import app, get_connection_manager
 from data_binding.database_engine import ConnectionManager
 from api.query import QueryModel
 
@@ -52,34 +52,31 @@ class MockConnectionManager(ConnectionManager):
     def get_connection(self):
         return self  # Return self as we don't need a real connection for testing
 
-@pytest.fixture
-def client():
-    app.dependency_overrides[get_connection_manager] = lambda: MockConnectionManager()
-    yield TestClient(app)
-    app.dependency_overrides.clear()
+    def test_query_api(self):
+        query = {
+            "select": ["name", "email"],
+            "where": "age > 25",
+            "order_by": ["name"],
+            "limit": 2
+        }
+        
+        organization = "company_a"
+        dataset = "users"
+        
+        response = self.client.post(f"/query/{organization}/{dataset}", json=query)
+        
+        print(f"Response status code: {response.status_code}")
+        print(f"Response content: {response.content}")
+        
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        
+        print(f"Result: {result}")
+        print(f"Result type: {type(result)}")
+        print(f"Result length: {len(result)}")
+        
+        self.assertEqual(len(result), 2)
+        self.assertTrue(all("name" in item and "email" in item for item in result))
 
-def test_query_api(client):
-    query = {
-        "select": ["name", "email"],
-        "where": "age > 25",
-        "order_by": ["name"],
-        "limit": 2
-    }
-    
-    organization = "company_a"
-    dataset = "users"
-    
-    response = client.post(f"/query/{organization}/{dataset}", json=query)
-    
-    print(f"Response status code: {response.status_code}")
-    print(f"Response content: {response.content}")
-    
-    assert response.status_code == 200
-    result = response.json()
-    
-    print(f"Result: {result}")
-    print(f"Result type: {type(result)}")
-    print(f"Result length: {len(result)}")
-    
-    assert len(result) == 2
-    assert all("name" in item and "email" in item for item in result)
+if __name__ == '__main__':
+    unittest.main()
