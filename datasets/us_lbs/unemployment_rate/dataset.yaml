@@ -1,4 +1,4 @@
-name: us_labor_unemployment_rate
+name: unemployment_rate
 description: Monthly US unemployment rate
 class: USLaborUnemploymentRateWorkflow
 params:
@@ -14,5 +14,5 @@ columns:
 
 database:
   type: duckdb
-  file: us_labor_unemployment_rate.duckdb
-  table: us_labor_unemployment_rate
+  file: data.parquet
+  table: unemployment_rate

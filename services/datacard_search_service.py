@@ -7,30 +7,23 @@ import logging
 logger = logging.getLogger(__name__)
 
 class DatacardSearchService:
-    def __init__(self, datacards_folder: str = 'datacards'):
-        self.datacards_folder = datacards_folder
-        logger.debug(f"DatacardSearchService initialized with folder: {datacards_folder}")
+    def __init__(self):
+        self.datacards_dir = 'datacards'
 
     def search_datacards(self, query: str) -> List[Dict]:
-        logger.debug(f"Searching datacards for query: {query}")
         results = []
-        query_tokens = self._tokenize(query)
-
-        for root, dirs, files in os.walk(self.datacards_folder):
-            for file in files:
-                if file.endswith('.yml') or file.endswith('.yaml'):
-                    file_path = os.path.join(root, file)
-                    logger.debug(f"Processing file: {file_path}")
-                    with open(file_path, 'r') as f:
-                        try:
-                            datacard = yaml.safe_load(f)
-                            if self._match_datacard(datacard, query_tokens):
-                                results.append(datacard)
-                                logger.debug(f"Matched datacard: {datacard.get('title', 'Unknown')}")
-                        except yaml.YAMLError as e:
-                            logger.error(f"Error parsing YAML file {file_path}: {e}")
-
-        logger.debug(f"Found {len(results)} matching datacards")
+        for org in os.listdir(self.datacards_dir):
+            org_path = os.path.join(self.datacards_dir, org)
+            if os.path.isdir(org_path):
+                for datacard_file in os.listdir(org_path):
+                    if datacard_file.endswith('.yml'):
+                        datacard_path = os.path.join(org_path, datacard_file)
+                        with open(datacard_path, 'r') as f:
+                            datacard_info = yaml.safe_load(f)
+                            datacard_info['organization'] = org
+                            datacard_info['datacard_slug'] = os.path.splitext(datacard_file)[0]
+                            if query.lower() in datacard_info.get('title', '').lower() or query.lower() in datacard_info.get('description', '').lower():
+                                results.append(datacard_info)
         return results
 
     def _tokenize(self, text: str) -> List[str]:

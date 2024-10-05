@@ -6,23 +6,19 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
 import uvicorn
-import asyncio
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.exceptions import HTTPException
 from fastapi.templating import Jinja2Templates
 from api.query import QueryModel
 from api.services import QueryService, DatacardService
-from data_binding.database_engine import ConnectionManager, ConcreteConnectionManager  # Import the concrete class
-from utils.config_loader import load_config  # Add this import
+from data_binding.database_engine import ConnectionManager, ConcreteConnectionManager
+from utils.config_loader import load_config, load_dataset_definition
 import logging
 import traceback
 from services.chat_service import ChatService
 from services.search_service import SearchService
-from services.llm_service import LLMService
 import json
-from utils.connection_manager import get_connection_manager
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -32,18 +28,19 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
 
+# Dependency Injection
 def get_connection_manager():
-    # Load the configuration
-    config = load_config()  # Implement this function to load your configuration
-    connection_config = config.get('connection', {})  # Adjust this based on your config structure
+    config = load_config()
+    connection_config = config.get('connection', {})
     return ConcreteConnectionManager(connection_config)
 
 def get_query_service(connection_manager: ConnectionManager = Depends(get_connection_manager)):
-    return QueryService()
+    return QueryService(connection_manager)
 
 def get_datacard_service(connection_manager: ConnectionManager = Depends(get_connection_manager)):
     return DatacardService(connection_manager)
 
+# Routes
 @app.get("/", response_class=RedirectResponse)
 async def read_root():
     return RedirectResponse(url="/chat")
@@ -54,7 +51,12 @@ async def chat_page(request: Request):
 
 @app.get("/render", response_class=HTMLResponse)
 async def render():
-    return HTMLResponse("render/datacard/render.html")
+    try:
+        with open("render/datacard/render.html", "r") as f:
+            content = f.read()
+        return HTMLResponse(content=content)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Render file not found")
 
 @app.post("/query/{organization}/{dataset}")
 async def query(
@@ -65,23 +67,23 @@ async def query(
 ):
     try:
         logger.debug(f"Received query for {organization}/{dataset}: {query_model}")
-        
+
         if not query_model.description:
             raise ValueError("Query description is required")
-        
+
         result = service.execute_query_on_dataset(query_model, organization, dataset)
-        
+
         if not result:
             return JSONResponse(content={"message": "No data found for the given query"}, status_code=404)
-        
+
         logger.debug(f"Query result: {result}")
-        return result
+        return JSONResponse(content=result)
     except ValueError as ve:
         logger.error(f"Invalid query: {str(ve)}")
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error(f"Error in query endpoint: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+        raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 @app.get("/datacard/{organization}/{definition}", response_class=HTMLResponse)
 async def render_datacard(organization: str, definition: str):
@@ -102,61 +104,48 @@ async def get_datacard_definition(
         logger.debug(f"Fetching datacard definition for {organization}/{definition}")
         result = service.get_datacard(organization, definition)
         logger.debug(f"Successfully fetched datacard definition: {result}")
-        return result
+        return JSONResponse(content=result)
     except FileNotFoundError as e:
         logger.error(f"Datacard definition not found: {str(e)}")
-        raise HTTPException(status_code=404, detail=f"Datacard definition not found: {str(e)}")
+        raise HTTPException(status_code=404, detail="Datacard definition not found")
     except Exception as e:
         logger.error(f"Error fetching datacard definition: {str(e)}")
         logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Error fetching datacard definition: {str(e)}")
+        raise HTTPException(status_code=500, detail="An internal server error occurred")
 
-print(f"ANTHROPIC_API_KEY is {'set' if os.environ.get('ANTHROPIC_API_KEY') else 'not set'}")
-
+# Instantiate Services for Dependency Injection
 search_service = SearchService()
-query_service = QueryService()
 chat_service = ChatService()
+query_service = QueryService()
 
 @app.post("/api/chat")
 async def chat(request: Request):
     if chat_service is None:
-        error_message = "Chat service is not available. "
-        if 'ANTHROPIC_API_KEY' not in os.environ:
-            error_message += "ANTHROPIC_API_KEY is not set. Please set it and restart the server."
-        else:
-            error_message += "Please check the server logs for more information."
+        error_message = "Chat service is not available. Please check the server logs for more information."
         return JSONResponse(content={"error": error_message}, status_code=503)
-    
+
     form_data = await request.form()
     message = form_data.get('message')
-    chat_history = json.loads(form_data.get('chat_history', '[]'))  # Get chat history from form data
-    
+    try:
+        chat_history = json.loads(form_data.get('chat_history', '[]'))
+    except json.JSONDecodeError:
+        logger.error("Invalid chat history format")
+        raise HTTPException(status_code=400, detail="Invalid chat history format")
+
     try:
         logger.debug(f"Processing message: {message}")
         logger.debug(f"Chat history: {chat_history}")
         response = chat_service.process_message(message, chat_history)
         logger.debug(f"Response generated: {response}")
-        
-        # Add this block to log the structure of the response
-        logger.debug("Response structure:")
-        logger.debug(f"Type: {type(response)}")
-        
-        # Ensure we're sending the correct structure
-        if isinstance(response, str):
-            return JSONResponse(content={
-                "message": response,
-                "retrieved_information": ""
-            })
-        elif isinstance(response, dict):
-            return JSONResponse(content={
-                "message": response.get("message", ""),
-                "retrieved_information": response.get("retrieved_information", "")
-            })
-        else:
-            raise ValueError(f"Unexpected response type: {type(response)}")
+
+        return JSONResponse(content={
+            "message": response['message'],
+            "retrieved_information": response['retrieved_information'],
+            "suggested_query": response['suggested_query']
+        })
     except Exception as e:
         logger.error(f"Error processing chat message: {str(e)}", exc_info=True)
-        return JSONResponse(content={"error": f"An error occurred: {str(e)}"}, status_code=500)
+        raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 @app.get("/api/search_dataset")
 async def search_dataset(query: str):
@@ -172,27 +161,22 @@ async def search_datacard(query: str):
 async def query_dataset(request: Request):
     data = await request.json()
     query = data['query']
-    dataset = data['dataset']
-    org, dataset_code = dataset.split('/')
-    results = query_service.execute_query_on_dataset(query, org, dataset_code)
-    return JSONResponse(content=results)
+    dataset_full_name = data['dataset']
+    organization, dataset = dataset_full_name.split('/', 1) if '/' in dataset_full_name else (None, dataset_full_name)
+    
+    if not organization:
+        raise HTTPException(status_code=400, detail="Organization not provided in the dataset name")
+    
+    try:
+        # Execute the query
+        results = query_service.execute_query_on_dataset(query, organization, dataset)
+        return JSONResponse(content=results)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Dataset configuration for '{dataset_full_name}' not found")
+    except Exception as e:
+        logger.error(f"Error querying dataset: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error querying dataset: {str(e)}")
 
-def start_server(host: str, port: int):
-    uvicorn.run(app, host=host, port=port)
-
-def stop_server():
-    print("Stopping server...")
-    # Get the current event loop
-    loop = asyncio.get_event_loop()
-
-    # Check if there's a running server
-    if hasattr(app, 'server'):
-        # Stop the server
-        app.server.should_exit = True
-        loop.run_until_complete(app.server.shutdown())
-        print("Server stopped.")
-    else:
-        print("No server instance found to stop.")
-
+# Server Control
 if __name__ == '__main__':
     uvicorn.run(app, host="0.0.0.0", port=8000)

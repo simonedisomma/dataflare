@@ -55,37 +55,110 @@ function createCommandCard(command, query, dataset = null) {
     return card;
 }
 
-function processLLMResponse(response, chatMessagesElement, onCommandExecuted) {
-    const commandRegex = /<\$(\w+)\s+([^>]+?)\s*\/?>/g;  // Modified regex to match both with and without closing '/'
+async function executeQuery(query, dataset) {
+    try {
+        const response = await fetch('/api/query_dataset', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ query, dataset }),
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'An error occurred while executing the query');
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Error executing query:', error);
+        throw error;
+    }
+}
+
+function createQueryResultCard(queryResult) {
+    const card = document.createElement('div');
+    card.className = 'bg-white shadow-md rounded-lg p-4 my-2';
+    card.innerHTML = `
+        <h3 class="font-bold text-lg mb-2">Query Result</h3>
+        <div class="overflow-x-auto">
+            <table class="min-w-full bg-white">
+                <thead class="bg-gray-100">
+                    <tr>${Object.keys(queryResult[0]).map(key => `<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${key}</th>`).join('')}</tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    ${queryResult.map(row => `
+                        <tr>
+                            ${Object.values(row).map(value => `<td class="px-4 py-2 whitespace-nowrap">${value}</td>`).join('')}
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    return card;
+}
+
+async function processDataQueryJson(queryJson, chatMessages) {
+    try {
+        const query = JSON.parse(queryJson);
+        const dataset = query.dataset;
+        
+        if (!dataset || !dataset.includes('/')) {
+            throw new Error("Invalid dataset format. Expected 'organization/dataset'");
+        }
+        
+        const queryResult = await executeQuery(query, dataset);
+        
+        if (Array.isArray(queryResult) && queryResult.length > 0) {
+            const resultCard = createQueryResultCard(queryResult);
+            chatMessages.appendChild(resultCard);
+        } else {
+            const noResultElement = document.createElement('div');
+            noResultElement.className = 'p-3 rounded-lg bg-yellow-100 text-yellow-800 my-2';
+            noResultElement.textContent = 'The query returned no results.';
+            chatMessages.appendChild(noResultElement);
+        }
+        
+        // Generate LLM response for the query result
+        const llmResponse = await generateLLMResponseForQueryResult(queryResult);
+        
+        const llmResponseElement = document.createElement('div');
+        llmResponseElement.className = 'p-3 rounded-lg bg-gray-100 text-gray-800 my-2';
+        llmResponseElement.textContent = llmResponse;
+        chatMessages.appendChild(llmResponseElement);
+        
+    } catch (error) {
+        console.error('Error processing data-query-json:', error);
+        const errorElement = document.createElement('div');
+        errorElement.className = 'p-3 rounded-lg bg-red-100 text-red-800 my-2';
+        errorElement.textContent = `Error executing query: ${error.message}`;
+        chatMessages.appendChild(errorElement);
+    }
+}
+
+async function generateLLMResponseForQueryResult(queryResult) {
+    // This function should call the backend to generate an LLM response for the query result
+    // For now, we'll just return a placeholder message
+    return "Here's an analysis of the query result: [Placeholder for LLM-generated analysis]";
+}
+
+function processLLMResponse(response, chatMessagesElement) {
+    const dataQueryJsonRegex = /```data-query-json\s*([\s\S]*?)```/g;
     let match;
     let lastIndex = 0;
     let processedResponse = '';
-    const commandCards = [];
 
-    while ((match = commandRegex.exec(response)) !== null) {
+    while ((match = dataQueryJsonRegex.exec(response)) !== null) {
         processedResponse += response.slice(lastIndex, match.index);
-        const [fullMatch, command, attributesString] = match;
-        
-        const attributes = {};
-        attributesString.replace(/(\w+)="([^"]*)"/g, (_, key, value) => {
-            attributes[key] = value;
-            return '';
-        });
-
-        if (command in commandHandlers) {
-            const card = createCommandCard(command, attributes.query, attributes.from);
-            commandCards.push(card);
-            card.addEventListener('command-executed', (event) => onCommandExecuted(command, event.detail));
-        } else {
-            processedResponse += fullMatch;
-        }
-
-        lastIndex = commandRegex.lastIndex;
+        const queryJson = match[1];
+        processDataQueryJson(queryJson, chatMessagesElement);
+        lastIndex = dataQueryJsonRegex.lastIndex;
     }
 
     processedResponse += response.slice(lastIndex);
-
-    return { processedResponse, commandCards };
+    return processedResponse;
 }
 
 let chatHistory = [];
@@ -116,26 +189,40 @@ async function sendMessage(message, chatMessages) {
             throw new Error(data.error || 'An error occurred');
         }
 
-        // Parse retrieved information from the message text
-        const parsedInfo = parseRetrievedInformation(data.message);
-        console.log("Parsed information:", parsedInfo);
-        
-        // Update datasets and datacards
-        if (parsedInfo.datasets.length > 0) {
-            datasets = [...new Set([...datasets, ...parsedInfo.datasets.map(d => d.name)])];
+        // Parse retrieved information
+        if (data.retrieved_information) {
+            console.log("Retrieved information:", data.retrieved_information);
+            try {
+                const parsedInfo = JSON.parse(data.retrieved_information);
+                console.log("Parsed information:", parsedInfo);
+                
+                // Update datasets and datacards
+                datasets = parsedInfo.datasets || [];
+                datacards = parsedInfo.datacards || [];
+                
+                console.log("Updated datasets:", datasets);
+                console.log("Updated datacards:", datacards);
+                
+                // Update sidebar with new information
+                updateSidebar();
+            } catch (error) {
+                console.error("Error parsing retrieved information:", error);
+            }
         }
-        if (parsedInfo.datacards.length > 0) {
-            datacards = [...new Set([...datacards, ...parsedInfo.datacards.map(d => d.name)])];
+
+        // Parse suggested query
+        let suggestedQuery = null;
+        if (data.suggested_query) {
+            try {
+                suggestedQuery = JSON.parse(data.suggested_query);
+                console.log("Suggested query:", suggestedQuery);
+            } catch (error) {
+                console.error("Error parsing suggested query:", error);
+            }
         }
-        
-        console.log("Updated datasets:", datasets);
-        console.log("Updated datacards:", datacards);
-        
-        // Always call updateSidebar, even if no new information was added
-        updateSidebar();
 
         // Process LLM response
-        const { processedResponse, commandCards } = processLLMResponse(data.message, chatMessages, onCommandExecuted);
+        const processedResponse = processLLMResponse(data.message, chatMessages);
 
         // Add LLM response to chat
         const llmMessageElement = document.createElement('div');
@@ -143,11 +230,19 @@ async function sendMessage(message, chatMessages) {
         llmMessageElement.innerHTML = processedResponse;
         chatMessages.appendChild(llmMessageElement);
 
-        // Append command cards
-        commandCards.forEach(card => chatMessages.appendChild(card));
+        // If there's a valid suggested query, create and append a command card for it
+        if (suggestedQuery && suggestedQuery.description && suggestedQuery.dataset) {
+            const queryCard = createCommandCard('query_dataset', suggestedQuery.description, suggestedQuery.dataset);
+            chatMessages.appendChild(queryCard);
+        }
 
         // Update chat history
-        chatHistory.push({ role: 'assistant', content: data.message });
+        chatHistory.push({ 
+            role: 'assistant', 
+            content: data.message,
+            retrieved_information: data.retrieved_information,
+            suggested_query: data.suggested_query
+        });
 
     } catch (error) {
         console.error('Error:', error);
@@ -158,33 +253,6 @@ async function sendMessage(message, chatMessages) {
     }
 
     chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function parseRetrievedInformation(message) {
-    const retrievedInfoMatch = message.match(/Retrieved Information:(.+?)(?=AI Response:)/s);
-    if (!retrievedInfoMatch) return { datasets: [], datacards: [] };
-
-    const retrievedInfo = retrievedInfoMatch[1];
-    const datasetsMatch = retrievedInfo.match(/Datasets:\s*(.+?)(?=\s*Measures:|$)/s);
-    const measuresMatch = retrievedInfo.match(/Measures:\s*(.+?)(?=\s*Dimensions:|$)/s);
-    const dimensionsMatch = retrievedInfo.match(/Dimensions:\s*(.+?)(?=\s*Datacards:|$)/s);
-    const datacardsMatch = retrievedInfo.match(/Datacards:\s*(.+?)(?=\s*$)/s);
-
-    const datasets = datasetsMatch ? [
-        {
-            name: datasetsMatch[1].trim().replace(/^-\s*/, ''),
-            description: "Monthly US unemployment rate",
-            measures: measuresMatch ? measuresMatch[1].split(',').map(m => m.trim()) : [],
-            dimensions: dimensionsMatch ? dimensionsMatch[1].split(',').map(d => d.trim()) : []
-        }
-    ] : [];
-
-    const datacards = datacardsMatch ? datacardsMatch[1].split('-').map(d => {
-        const [name, description] = d.split(':').map(s => s.trim());
-        return { name: name.replace(/^-\s*/, ''), description };
-    }).filter(d => d.name && d.name !== "Unnamed datacard") : [];
-
-    return { datasets, datacards };
 }
 
 function updateSidebar() {
@@ -199,17 +267,48 @@ function updateSidebar() {
         <div class="mb-6">
             <h2 class="font-bold text-lg mb-2">Datasets</h2>
             <ul class="list-disc pl-5">
-                ${datasets.map(dataset => `<li>${dataset}</li>`).join('')}
+                ${datasets.map(dataset => `
+                    <li>
+                        <strong>${dataset.name} (${dataset.organization}/${dataset.dataset_slug})</strong>
+                        <p class="text-sm">${dataset.description}</p>
+                        <p class="text-xs">Measures: ${dataset.measures.join(', ')}</p>
+                        <p class="text-xs">Dimensions: ${dataset.dimensions.join(', ')}</p>
+                    </li>
+                `).join('')}
             </ul>
         </div>
         <div>
             <h2 class="font-bold text-lg mb-2">Datacards</h2>
             <ul class="list-disc pl-5">
-                ${datacards.map(datacard => `<li>${datacard}</li>`).join('')}
+                ${datacards.map(datacard => `
+                    <li>
+                        <strong>${datacard.name} (${datacard.organization}/${datacard.datacard_slug})</strong>
+                        <p class="text-sm">${datacard.description}</p>
+                    </li>
+                `).join('')}
             </ul>
         </div>
     `;
     console.log("Sidebar updated");
+}
+
+function addMessageToChat(content, isUser = false) {
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) {
+        console.error("Chat messages container not found");
+        return;
+    }
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    contentDiv.textContent = content;
+    
+    messageDiv.appendChild(contentDiv);
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -217,16 +316,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatInput = document.querySelector('input[name="message"]');
     const chatMessages = document.getElementById('chat-messages');
 
+    if (!chatForm || !chatInput || !chatMessages) {
+        console.error("Required elements not found");
+        return;
+    }
+
     chatForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const userMessage = chatInput.value.trim();
         if (!userMessage) return;
 
         // Add user message to chat
-        const userMessageElement = document.createElement('div');
-        userMessageElement.className = 'p-3 rounded-lg bg-blue-100 text-blue-800 ml-auto my-2';
-        userMessageElement.textContent = userMessage;
-        chatMessages.appendChild(userMessageElement);
+        addMessageToChat(userMessage, true);
 
         // Update chat history
         if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'user') {

@@ -26,19 +26,17 @@ def load_config(config_path: str = DEFAULT_CONFIG_PATH) -> Dict:
 def get_dataset_yaml_path(organization: str, dataset_code: str) -> str:
     return os.path.join('datasets', organization, dataset_code, 'dataset.yaml')
 
-def load_dataset_definition(organization: str, dataset: str) -> dict:
-    file_path = os.path.join('datasets', organization, dataset, 'dataset.yaml')
+def load_dataset_definition(organization: str, dataset: str):
+    file_path = get_dataset_yaml_path(organization, dataset)
     logger.info(f"Loading dataset definition from: {file_path}")
     try:
         with open(file_path, 'r') as file:
-            config = yaml.safe_load(file)
-        logger.info(f"Loaded dataset definition: {config}")
-        return config
+            return yaml.safe_load(file)
     except FileNotFoundError:
         logger.error(f"Dataset definition file not found: {file_path}")
         raise
     except yaml.YAMLError as e:
-        logger.error(f"Error parsing dataset definition YAML: {e}")
+        logger.error(f"Error parsing dataset YAML: {e}")
         raise
 
 def save_dataset_definition(dataset_name: str, database: str, connection_config: Dict, schema: List[str], organization: str, dataset_code: str):
