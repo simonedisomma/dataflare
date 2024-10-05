@@ -8,18 +8,22 @@ logger = logging.getLogger(__name__)
 
 class DatasetSearchService:
     def __init__(self):
-        # Initialize with your dataset catalog or database
-        pass
+        self.datasets_dir = 'datasets'
 
     def search_datasets(self, query: str) -> List[Dict]:
-        # Perform the search logic here
-        # For each dataset, include name, description, measures, and dimensions
-        return [
-            {
-                "name": "us_labor_unemployment_rate",
-                "description": "Monthly US unemployment rate",
-                "measures": ["unemployment_rate"],
-                "dimensions": ["date", "state"]
-            },
-            # Add other datasets here
-        ]
+        results = []
+        for org in os.listdir(self.datasets_dir):
+            org_path = os.path.join(self.datasets_dir, org)
+            if os.path.isdir(org_path):
+                for dataset_slug in os.listdir(org_path):
+                    dataset_path = os.path.join(org_path, dataset_slug)
+                    if os.path.isdir(dataset_path):
+                        yaml_path = os.path.join(dataset_path, 'dataset.yaml')
+                        if os.path.exists(yaml_path):
+                            with open(yaml_path, 'r') as f:
+                                dataset_info = yaml.safe_load(f)
+                                dataset_info['organization'] = org
+                                dataset_info['dataset_slug'] = dataset_slug
+                                if query.lower() in dataset_info.get('name', '').lower() or query.lower() in dataset_info.get('description', '').lower():
+                                    results.append(dataset_info)
+        return results

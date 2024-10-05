@@ -3,13 +3,11 @@ import anthropic
 from typing import List, Dict
 import json
 import logging
-from services.dataset_search_service import DatasetSearchService
-from services.datacard_search_service import DatacardSearchService
 
 logger = logging.getLogger(__name__)
 
 class LLMService:
-    def __init__(self, dataset_search_service: DatasetSearchService, datacard_search_service: DatacardSearchService):
+    def __init__(self, dataset_search_service, datacard_search_service):
         self.dataset_search_service = dataset_search_service
         self.datacard_search_service = datacard_search_service
         self.client = anthropic.Client(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -19,29 +17,30 @@ class LLMService:
 
         ```data-query-json
         {
-            "description": "A brief description of the query",
-            "select": ["list", "of", "fields", "to", "select"],
-            "where": "condition for filtering data",
-            "order_by": ["list", "of", "fields", "to", "order", "by"],
-            "limit": number_of_results_to_return,
-            "table": "name_of_the_table",
-            "organization": "organization_name",
-            "dataset": "dataset_name"
+            "dataset": "organization/dataset_name",
+            "measures": ["at_least_one_measure_field"],
+            "dimensions": ["at_least_one_dimension_field"],
+            "filters": [],
+            "order": ["field ASC" or "field DESC"],
+            "limit": number_of_results
         }
         ```
 
-        Always use this exact format when suggesting a query.
+        Always use this exact format when suggesting a query. The dataset should be the full name including the organization, e.g., "us_lbs/unemployment_rate".
+        IMPORTANT:
+        1. Use the exact field names as provided in the dataset information. Do not substitute or rename fields.
+        2. Always include at least one measure and one dimension in every query.
+        3. The "measures" and "dimensions" fields must never be empty.
+        4. If you're unsure about which measure or dimension to use, include the most relevant ones based on the user's question.
+        5. For time-series data, always include a dimension with type date or time field as a dimension.
         """
 
-    def generate_response(self, message: str, chat_history: List[Dict], system_prompt: str) -> Dict:
+    def generate_response(self, message: str, chat_history: List[Dict], system_prompt: str, retrieved_info: Dict) -> Dict:
         logger.debug(f"Generating response for message: {message}")
         
         try:
-            # Perform RAG to get relevant information
-            relevant_info = self.retrieve_relevant_info(message, chat_history)
-            
             # Format the relevant information
-            formatted_info = self._format_relevant_info(relevant_info)
+            formatted_info = self._format_relevant_info(retrieved_info)
             
             # Augment the system prompt with the retrieved information and query format instructions
             augmented_prompt = f"""
@@ -54,13 +53,13 @@ class LLMService:
 
             Based on the user's input, suggest a specific query to execute on the relevant dataset. 
             Format the query suggestion as JSON wrapped in the ```data-query-json``` command as shown above.
-            After suggesting the query, wait for the query results. Once you receive the results, analyze them and provide insights to the user.
-            If you receive an error instead of results, explain the error to the user and suggest how to modify the query to avoid the error.
+            Make sure to include the full dataset name with organization (e.g., "us_lbs/unemployment_rate") in the "dataset" field.
+            ALWAYS include at least one measure and one dimension in your query.
+            Don't apologize for anything.
+            Be concise.
+
             """
 
-            # Modify the payload to instruct the LLM to generate a query
-            augmented_prompt += "\nBased on the user's input, suggest a specific query to execute on the relevant dataset. Format the query suggestion as JSON."
-            
             payload = {
                 "model": "claude-3-5-sonnet-20240620",
                 "max_tokens": 1000,
@@ -74,122 +73,85 @@ class LLMService:
             response = self._make_llm_request(payload)
             logger.debug(f"LLM response: {response}")
 
-            # Include the retrieved RAG information in the response
-            full_response = f"Retrieved Information:\n{formatted_info}\n\nAI Response:\n{response}"
-            
             # Parse the LLM response to extract the suggested query
             suggested_query = self._extract_query_from_response(response)
 
+            # Validate the suggested query
+            if not self._is_valid_query(suggested_query):
+                raise ValueError("Generated query is invalid: missing required fields or empty measures/dimensions")
+
             return {
-                "response": full_response,
+                "response": response,
                 "suggested_query": suggested_query
             }
         except Exception as e:
             logger.error(f"Error generating LLM response: {str(e)}", exc_info=True)
             raise
 
-    def retrieve_relevant_info(self, message: str, chat_history: List[Dict]) -> Dict[str, List[Dict]]:
-        logger.debug(f"Retrieving relevant info for message: {message}")
-        # Combine the current message and chat history for context
-        context = message + " " + " ".join([msg["content"] for msg in chat_history])
-        
-        # Search for relevant datasets and datacards
-        datasets = self.dataset_search_service.search_datasets(context)
-        datacards = self.datacard_search_service.search_datacards(context)
-        
-        logger.debug(f"Retrieved {len(datasets)} datasets and {len(datacards)} datacards")
-        return {
-            "datasets": datasets,
-            "datacards": datacards
-        }
+    def _is_valid_query(self, query: Dict) -> bool:
+        return (
+            query.get('dataset') and
+            query.get('measures') and
+            query.get('dimensions') and
+            len(query['measures']) > 0 and
+            len(query['dimensions']) > 0
+        )
 
-    def _format_relevant_info(self, relevant_info):
-        formatted_info = "Retrieved Information:\n"
+    def _format_relevant_info(self, relevant_info: Dict) -> str:
+        formatted_info = []
         
         if 'datasets' in relevant_info:
-            formatted_info += "Datasets:\n"
+            formatted_info.append("Datasets:")
             for dataset in relevant_info['datasets']:
-                name = dataset.get('name', 'Unnamed dataset')
-                description = dataset.get('description', 'No description available')
-                measures = ", ".join(dataset.get('measures', []))
-                dimensions = ", ".join(dataset.get('dimensions', []))
-                formatted_info += f"- {name}: {description}\n"
-                formatted_info += f"  Measures: {measures}\n"
-                formatted_info += f"  Dimensions: {dimensions}\n"
+                dataset_info = [
+                    f"- {dataset['name']} ({dataset['organization']}/{dataset['dataset_slug']}): {dataset['description']}",
+                    f"  Measures: {', '.join(dataset['measures'])}",
+                    f"  Dimensions: {', '.join(dataset['dimensions'])}"
+                ]
+                formatted_info.extend(dataset_info)
         
         if 'datacards' in relevant_info:
-            formatted_info += "Datacards:\n"
+            formatted_info.append("Datacards:")
             for datacard in relevant_info['datacards']:
-                name = datacard.get('name', 'Unnamed datacard')
-                description = datacard.get('description', 'No description available')
-                formatted_info += f"- {name}: {description}\n"
+                formatted_info.append(f"- {datacard['name']} ({datacard['organization']}/{datacard['datacard_slug']}): {datacard['description']}")
         
-        return formatted_info.strip()
+        return "\n".join(formatted_info)
 
     def _build_messages(self, message: str, chat_history: List[Dict]) -> List[Dict]:
-        logger.debug("Building messages")
         messages = []
         last_role = None
         for entry in chat_history:
             role = "user" if entry.get("role") == "user" else "assistant"
             content = entry.get('content', '')
-            if role != last_role:  # Only add the message if it's a different role from the last one
+            if role != last_role:
                 messages.append({"role": role, "content": content})
-                logger.debug(f"Added message: role={role}, content={content}")
                 last_role = role
             else:
-                logger.debug(f"Skipped duplicate role message: role={role}, content={content}")
+                messages[-1]["content"] += f"\n{content}"
         
-        # Always add the new user message at the end
         if last_role != "user":
             messages.append({"role": "user", "content": message})
-            logger.debug(f"Added user message: {message}")
         else:
-            logger.debug(f"Appended to last user message: {message}")
             messages[-1]["content"] += f"\n{message}"
         
-        logger.debug(f"Built messages: {json.dumps(messages, indent=2)}")
         return messages
 
     def _make_llm_request(self, payload: dict) -> str:
-        logger.debug("Making LLM request")
         try:
             response = self.client.messages.create(**payload)
-            logger.debug(f"Raw LLM response: {response}")
-
             content = response.content[0].text
             
-            # Check if the response was stopped due to a stop sequence
             if response.stop_reason == 'stop_sequence':
-                # Add back the stop sequence ("/>" in this case)
                 content += "/>"
             
-            logger.debug(f"Extracted content from LLM response: {content}")
             return content
         except Exception as e:
             logger.error(f"Error making LLM request: {str(e)}", exc_info=True)
             raise
 
-    def _format_chat_history(self, chat_history: List[Dict]) -> List[Dict]:
-        logger.debug("Formatting chat history")
-        formatted_history = []
-        for message in chat_history:
-            role = "user" if message.get("role") == "user" else "assistant"
-            content = message.get("content", "")
-            formatted_history.append({"role": role, "content": content})
-            logger.debug(f"Formatted message: role={role}, content={content}")
-        logger.debug(f"Formatted chat history: {json.dumps(formatted_history, indent=2)}")
-        return formatted_history
-
-    def _extract_query_dataset(self, response: str) -> Dict:
-        # Extract dataset query information from the response
-        pass
-
     def _extract_query_from_response(self, response: str) -> Dict:
         import re
-        import json
 
-        # Look for the data-query-json block
         match = re.search(r'```data-query-json\s*(.*?)\s*```', response, re.DOTALL)
         if match:
             try:
