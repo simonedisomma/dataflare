@@ -54,9 +54,10 @@ class LLMService:
             Based on the user's input, suggest a specific query to execute on the relevant dataset. 
             Format the query suggestion as JSON wrapped in the ```data-query-json``` command as shown above.
             Make sure to include the full dataset name with organization (e.g., "us_lbs/unemployment_rate") in the "dataset" field.
-            Use ONLY the exact field names provided in the dataset information for measures and dimensions.
             ALWAYS include at least one measure and one dimension in your query.
-            After suggesting the query, provide a brief explanation of what the query will do and how it relates to the user's question.
+            Don't apologize for anything.
+            Be concise.
+
             """
 
             payload = {

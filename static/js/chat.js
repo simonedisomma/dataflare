@@ -266,29 +266,50 @@ function updateSidebar() {
     sidebar.innerHTML = `
         <div class="mb-6">
             <h2 class="font-bold text-lg mb-2">Datasets</h2>
-            <ul class="list-disc pl-5">
+            <ul class="space-y-2">
                 ${datasets.map(dataset => `
-                    <li>
-                        <strong>${dataset.name} (${dataset.organization}/${dataset.dataset_slug})</strong>
-                        <p class="text-sm">${dataset.description}</p>
-                        <p class="text-xs">Measures: ${dataset.measures.join(', ')}</p>
-                        <p class="text-xs">Dimensions: ${dataset.dimensions.join(', ')}</p>
+                    <li class="dataset-item">
+                        <div class="flex items-center">
+                            <i class="fas fa-database text-blue-500 mr-2"></i>
+                            <div>
+                                <div class="font-semibold">${dataset.description}</div>
+                                <div class="text-sm text-gray-500">${dataset.organization}/${dataset.dataset_slug}</div>
+                            </div>
+                        </div>
+                        <div class="dataset-details hidden mt-2 text-sm">
+                            <div><strong>Measures:</strong> ${dataset.measures.join(', ')}</div>
+                            <div><strong>Dimensions:</strong> ${dataset.dimensions.join(', ')}</div>
+                        </div>
                     </li>
                 `).join('')}
             </ul>
         </div>
         <div>
             <h2 class="font-bold text-lg mb-2">Datacards</h2>
-            <ul class="list-disc pl-5">
+            <ul class="space-y-2">
                 ${datacards.map(datacard => `
-                    <li>
-                        <strong>${datacard.name} (${datacard.organization}/${datacard.datacard_slug})</strong>
-                        <p class="text-sm">${datacard.description}</p>
+                    <li class="datacard-item">
+                        <div class="flex items-center">
+                            <i class="fas fa-chart-bar text-green-500 mr-2"></i>
+                            <div>
+                                <div class="font-semibold">${datacard.name}</div>
+                                <div class="text-sm text-gray-500">${datacard.organization}/${datacard.datacard_slug}</div>
+                            </div>
+                        </div>
                     </li>
                 `).join('')}
             </ul>
         </div>
     `;
+
+    // Add hover effect for dataset items
+    const datasetItems = sidebar.querySelectorAll('.dataset-item');
+    datasetItems.forEach(item => {
+        const details = item.querySelector('.dataset-details');
+        item.addEventListener('mouseenter', () => details.classList.remove('hidden'));
+        item.addEventListener('mouseleave', () => details.classList.add('hidden'));
+    });
+
     console.log("Sidebar updated");
 }
 
