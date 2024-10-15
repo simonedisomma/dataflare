@@ -6,9 +6,9 @@ import threading
 import time
 import pandas as pd
 from main import initialize_workflows
-from data_binding.database_engine import ConnectionManager
-from api.query import QueryModel
-from api.services import QueryService, DatacardService
+from connections.database_engine import ConnectionManager
+from models.query import QueryModel
+from services.query import QueryService, DatacardService
 from app import app, start_server, stop_server
 from utils.config_loader import load_config, load_dataset_definition
 from workflows.base_workflow import BaseWorkflow

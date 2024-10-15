@@ -1,3 +1,3 @@
+execute_tests: true
 connection:
   driver: duckdb  # or whatever driver you're using
-  # Add other connection details as needed

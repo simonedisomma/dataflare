@@ -1,8 +1,9 @@
 import pytest
 import json
-from data_binding.database_engine import ConnectionManager
-from api.services import QueryService
-from api.query import QueryBuilder
+from connections.database_engine import ConnectionManager
+from services.query import QueryService
+from models.query import QueryBuilder
+from connections.connection_factory import ConnectionFactory
 
 @pytest.fixture
 def sample_data():
@@ -15,12 +16,14 @@ def sample_data():
 @pytest.fixture
 def query_service(sample_data):
     connection_config = {'driver': 'duckdb', 'db_path': ':memory:'}
-    connection_manager = ConnectionManager.create(connection_config)
+    connection_manager = ConnectionFactory.create_connection('duckdb', connection_config)
     
     connection_manager.register_dataset("company_a", "users", ["id INTEGER", "name VARCHAR", "age INTEGER", "email VARCHAR"])
     connection_manager.add_records("company_a", "users", sample_data)
 
-    return QueryService(connection_manager)
+    query_service = QueryService()
+    query_service.connection_managers["company_a/users"] = connection_manager
+    return query_service
 
 def test_query_builder(query_service):
     query_builder = (QueryBuilder()
@@ -30,7 +33,7 @@ def test_query_builder(query_service):
         .order_by("name")
         .limit(2)
     )
-    result = query_service.execute_query(query_builder.build())
+    result = query_service.execute_query_on_dataset(query_builder.build(), "company_a", "users")
 
     assert len(result) == 2
     assert all("name" in item and "email" in item for item in result)
@@ -44,7 +47,7 @@ def test_query_chaining(query_service):
         .select("email")
     )
     
-    result = query_service.execute_query(query_builder.build())
+    result = query_service.execute_query_on_dataset(query_builder.build(), "company_a", "users")
 
     assert len(result) == 1  # Only Charlie should be over 30
     assert "name" in result[0] and "email" in result[0]
@@ -53,7 +56,7 @@ def test_query_chaining(query_service):
 
 def test_empty_query(query_service):
     query_builder = QueryBuilder().from_table("users")
-    result = query_service.execute_query(query_builder.build())
+    result = query_service.execute_query_on_dataset(query_builder.build(), "company_a", "users")
     assert len(result) == 3  # Should return all data when no fields are specified
     print(f"Empty query result: {json.dumps(result, indent=2)}")
 
@@ -62,7 +65,7 @@ def test_simple_query(query_service):
         .from_table("users")
         .select("name", "email")
     )
-    result = query_service.execute_query(query_builder.build())
+    result = query_service.execute_query_on_dataset(query_builder.build(), "company_a", "users")
     print(f"Simple query result: {json.dumps(result, indent=2)}")
 
     assert len(result) == 3

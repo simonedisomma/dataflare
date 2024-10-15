@@ -1,7 +1,7 @@
-from data_binding.database_engine import ConcreteConnectionManager
+from connections.database_engine import ConcreteConnectionManager
 from typing import List, Dict, Any
 import logging
-from utils.config_loader import load_config, load_dataset_definition
+from utils.config_loader import load_dataset_definition
 import os
 import yaml
 import json
@@ -13,11 +13,19 @@ class QueryService:
     def __init__(self):
         self.connection_managers = {}
 
-    def execute_query_on_dataset(self, query_model: Dict[str, Any], organization: str, dataset: str):
+    def execute_query_on_dataset(self, query_model: Dict[str, Any], dataset: str, organization: str = None):
+        if organization is None:
+            if '/' not in dataset:
+                raise ValueError("If organization is not provided, dataset must be in the format 'organization/dataset'")
+            organization, dataset = dataset.split('/', 1)
+        elif '/' in dataset:
+            organization, dataset = dataset.split('/', 1)
+
         logger.debug(f"Executing query on {organization}/{dataset}: {query_model}")
         try:
+
             # Load the dataset definition
-            dataset_config = load_dataset_definition(organization, dataset)
+            dataset_config = load_dataset_definition(dataset_code=dataset, organization=organization)
             
             # Extract database configuration
             database_config = dataset_config.get('database', {})

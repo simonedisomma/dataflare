@@ -1,8 +1,9 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
-from data_binding.database_engine import ConnectionManager
-from api.query import QueryModel
+from connections.database_engine import ConnectionManager
+from models.query import QueryModel
+from main import app  # Import the FastAPI app
 
 class MockConnectionManager(ConnectionManager):
     def __init__(self):
@@ -51,6 +52,15 @@ class MockConnectionManager(ConnectionManager):
 
     def get_connection(self):
         return self  # Return self as we don't need a real connection for testing
+
+class TestQueryAPI(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        self.patcher = patch('main.ConnectionManager', MockConnectionManager)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
 
     def test_query_api(self):
         query = {

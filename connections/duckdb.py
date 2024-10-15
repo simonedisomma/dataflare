@@ -1,9 +1,12 @@
 import os
 import duckdb
 from typing import List, Any, Dict
-from data_binding.database_engine import ConnectionManager
+from connections.database_engine import ConnectionManager
 from utils.config_loader import load_dataset_definition, save_dataset_definition
 from datetime import datetime, date
+import logging
+
+logger = logging.getLogger(__name__)
 
 class DuckDBConnectionManager(ConnectionManager):
     def __init__(self, connection_config):
@@ -47,7 +50,7 @@ class DuckDBConnectionManager(ConnectionManager):
 
     def execute_query_on_dataset(self, organization: str, dataset_name: str, query_model: Dict[str, Any]):
         # Load dataset configuration
-        dataset_config = load_dataset_definition(organization, dataset_name)
+        dataset_config = load_dataset_definition(dataset_code=dataset_name, organization=organization)
         database_config = dataset_config.get('database', {})
         
         # Register parquet file if it exists
@@ -71,30 +74,36 @@ class DuckDBConnectionManager(ConnectionManager):
 
     def _build_query(self, query_model):
         fields = self._get_query_columns(query_model)
+        if not fields:
+            fields = ['*'] 
         fields_str = ', '.join(fields)
         query = f"SELECT {fields_str} FROM {query_model['table']}"
         
-        if 'where' in query_model:
+        if 'where' in query_model and query_model['where']:
             query += f" WHERE {query_model['where']}"
         
-        if 'order_by' in query_model:
+        if 'order_by' in query_model and query_model['order_by']:
             order_by = query_model['order_by']
             if isinstance(order_by, list):
                 order_by = ', '.join(order_by)
             query += f" ORDER BY {order_by}"
         
-        if 'limit' in query_model:
+        if 'limit' in query_model and query_model['limit'] is not None:
             query += f" LIMIT {query_model['limit']}"
+
+        logger.debug(f"Built SQL query: {query}")
+
         
         return query
 
     def _get_query_columns(self, query_model):
-        if 'select' in query_model:
+        if 'select' in query_model and query_model['select']:
             return query_model['select']
         elif 'measures' in query_model or 'dimensions' in query_model:
             measures = query_model.get('measures', [])
             dimensions = query_model.get('dimensions', [])
-            return measures + dimensions
+            fields = measures + dimensions
+            return fields if fields else ['*']
         else:
             return ['*']
 

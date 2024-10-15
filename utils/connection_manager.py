@@ -1,4 +1,4 @@
-from data_binding.database_engine import ConcreteConnectionManager
+from connections.database_engine import ConcreteConnectionManager
 from utils.config_loader import load_config
 
 def get_connection_manager():

@@ -144,21 +144,75 @@ async function generateLLMResponseForQueryResult(queryResult) {
     return "Here's an analysis of the query result: [Placeholder for LLM-generated analysis]";
 }
 
-function processLLMResponse(response, chatMessagesElement) {
-    const dataQueryJsonRegex = /```data-query-json\s*([\s\S]*?)```/g;
-    let match;
-    let lastIndex = 0;
-    let processedResponse = '';
+// Add this function to load Prism.js dynamically
+function loadPrismJS() {
+    if (window.Prism) return Promise.resolve();
 
-    while ((match = dataQueryJsonRegex.exec(response)) !== null) {
-        processedResponse += response.slice(lastIndex, match.index);
-        const queryJson = match[1];
-        processDataQueryJson(queryJson, chatMessagesElement);
-        lastIndex = dataQueryJsonRegex.lastIndex;
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js';
+        script.onload = () => {
+            const cssLink = document.createElement('link');
+            cssLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-okaidia.min.css';
+            cssLink.rel = 'stylesheet';
+            document.head.appendChild(cssLink);
+            resolve();
+        };
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+}
+
+function processLLMResponse(response) {
+    const codeRegex = /```execute-code\s*([\s\S]*?)```/g;
+    let lastIndex = 0;
+    const fragments = [];
+
+    let match;
+    while ((match = codeRegex.exec(response)) !== null) {
+        // Add text before the code block, excluding comments
+        if (match.index > lastIndex) {
+            const textBefore = response.slice(lastIndex, match.index);
+            const cleanedText = textBefore.replace(/This code will.*\n/, '').trim();
+            if (cleanedText) {
+                fragments.push(document.createTextNode(cleanedText));
+            }
+        }
+        
+        // Add formatted code block
+        const codeBlock = formatCodeBlock(match[1].trim());
+        fragments.push(codeBlock);
+        
+        lastIndex = codeRegex.lastIndex;
     }
 
-    processedResponse += response.slice(lastIndex);
-    return processedResponse;
+    // Add any remaining text after the last code block, excluding the assessment
+    if (lastIndex < response.length) {
+        const remainingText = response.slice(lastIndex);
+        const cleanedText = remainingText.replace(/Assessment:.*$/, '').trim();
+        if (cleanedText) {
+            fragments.push(document.createTextNode(cleanedText));
+        }
+    }
+
+    return fragments;
+}
+
+function formatCodeBlock(code) {
+    const codeBlock = document.createElement('div');
+    codeBlock.className = 'code-block mb-4';
+    
+    const pre = document.createElement('pre');
+    pre.className = 'code bg-gray-100 p-4 rounded';
+    
+    const codeElement = document.createElement('code');
+    codeElement.className = 'language-python';
+    codeElement.textContent = code;
+    
+    pre.appendChild(codeElement);
+    codeBlock.appendChild(pre);
+    
+    return codeBlock;
 }
 
 let chatHistory = [];
@@ -169,6 +223,24 @@ let datacards = [];
 function onCommandExecuted(command, result) {
     console.log(`Command ${command} executed with result:`, result);
     // You can add more logic here to handle the command execution result
+}
+
+function createCodeBlock(code, output) {
+    const codeBlock = document.createElement('div');
+    codeBlock.className = 'code-block';
+    
+    const codeElement = document.createElement('pre');
+    codeElement.className = 'code';
+    codeElement.textContent = code;
+    
+    const outputElement = document.createElement('pre');
+    outputElement.className = 'code-output';
+    outputElement.textContent = output;
+    
+    codeBlock.appendChild(codeElement);
+    codeBlock.appendChild(outputElement);
+    
+    return codeBlock;
 }
 
 async function sendMessage(message, chatMessages) {
@@ -189,60 +261,70 @@ async function sendMessage(message, chatMessages) {
             throw new Error(data.error || 'An error occurred');
         }
 
-        // Parse retrieved information
-        if (data.retrieved_information) {
-            console.log("Retrieved information:", data.retrieved_information);
-            try {
-                const parsedInfo = JSON.parse(data.retrieved_information);
-                console.log("Parsed information:", parsedInfo);
-                
-                // Update datasets and datacards
-                datasets = parsedInfo.datasets || [];
-                datacards = parsedInfo.datacards || [];
-                
-                console.log("Updated datasets:", datasets);
-                console.log("Updated datacards:", datacards);
-                
-                // Update sidebar with new information
-                updateSidebar();
-            } catch (error) {
-                console.error("Error parsing retrieved information:", error);
-            }
-        }
-
-        // Parse suggested query
-        let suggestedQuery = null;
-        if (data.suggested_query) {
-            try {
-                suggestedQuery = JSON.parse(data.suggested_query);
-                console.log("Suggested query:", suggestedQuery);
-            } catch (error) {
-                console.error("Error parsing suggested query:", error);
-            }
-        }
-
         // Process LLM response
-        const processedResponse = processLLMResponse(data.message, chatMessages);
+        const responseFragments = processLLMResponse(data.message);
 
-        // Add LLM response to chat
+        // Add LLM response to chat (including formatted code blocks)
         const llmMessageElement = document.createElement('div');
         llmMessageElement.className = 'p-3 rounded-lg bg-gray-100 text-gray-800 my-2';
-        llmMessageElement.innerHTML = processedResponse;
+        responseFragments.forEach(fragment => llmMessageElement.appendChild(fragment));
+
+        // If there's a code execution result, display it immediately after the code block
+        if (data.code_execution_result) {
+            const executionResultElement = document.createElement('div');
+            executionResultElement.className = 'code-output bg-gray-200 p-4 rounded mt-2 mb-4';
+            
+            // Add output
+            if (data.code_execution_result.output) {
+                const outputElement = document.createElement('pre');
+                outputElement.className = 'output';
+                outputElement.textContent = data.code_execution_result.output;
+                executionResultElement.appendChild(outputElement);
+            }
+
+            // Add plot if present
+            if (data.code_execution_result.plot) {
+                const plotContainer = document.createElement('div');
+                plotContainer.className = 'plot-container mt-4';
+                const plotImage = document.createElement('img');
+                plotImage.src = `data:image/png;base64,${data.code_execution_result.plot}`;
+                plotContainer.appendChild(plotImage);
+                executionResultElement.appendChild(plotContainer);
+            }
+
+            // Add DataFrames if present
+            if (data.code_execution_result.dataframes) {
+                for (const [name, htmlContent] of Object.entries(data.code_execution_result.dataframes)) {
+                    const dataframeContainer = document.createElement('div');
+                    dataframeContainer.className = 'dataframe-container mt-4';
+                    dataframeContainer.innerHTML = `<h4 class="font-bold">${name}</h4>${formatDataFrameHTML(htmlContent)}`;
+                    executionResultElement.appendChild(dataframeContainer);
+                }
+            }
+
+            // Append the execution result after the last code block
+            const codeBlocks = llmMessageElement.querySelectorAll('.code-block');
+            if (codeBlocks.length > 0) {
+                codeBlocks[codeBlocks.length - 1].appendChild(executionResultElement);
+            } else {
+                llmMessageElement.appendChild(executionResultElement);
+            }
+        }
+
         chatMessages.appendChild(llmMessageElement);
 
-        // If there's a valid suggested query, create and append a command card for it
-        if (suggestedQuery && suggestedQuery.description && suggestedQuery.dataset) {
-            const queryCard = createCommandCard('query_dataset', suggestedQuery.description, suggestedQuery.dataset);
-            chatMessages.appendChild(queryCard);
-        }
+        // Apply syntax highlighting
+        Prism.highlightAllUnder(llmMessageElement);
 
         // Update chat history
         chatHistory.push({ 
             role: 'assistant', 
             content: data.message,
-            retrieved_information: data.retrieved_information,
-            suggested_query: data.suggested_query
+            code_execution_result: data.code_execution_result
         });
+
+        // Add "Continue Analysis" button
+        addContinueAnalysisButton(chatMessages);
 
     } catch (error) {
         console.error('Error:', error);
@@ -253,6 +335,19 @@ async function sendMessage(message, chatMessages) {
     }
 
     chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function addContinueAnalysisButton(chatMessages) {
+    const buttonContainer = document.createElement('div');
+    buttonContainer.className = 'continue-analysis-container mt-4 text-center';
+    
+    const continueButton = document.createElement('button');
+    continueButton.textContent = 'Continue Analysis';
+    continueButton.className = 'bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded';
+    continueButton.onclick = () => sendMessage('Continue analysis', chatMessages);
+    
+    buttonContainer.appendChild(continueButton);
+    chatMessages.appendChild(buttonContainer);
 }
 
 function updateSidebar() {
@@ -351,11 +446,7 @@ document.addEventListener('DOMContentLoaded', () => {
         addMessageToChat(userMessage, true);
 
         // Update chat history
-        if (chatHistory.length > 0 && chatHistory[chatHistory.length - 1].role === 'user') {
-            chatHistory[chatHistory.length - 1].content += '\n' + userMessage;
-        } else {
-            chatHistory.push({ role: 'user', content: userMessage });
-        }
+        chatHistory.push({ role: 'user', content: userMessage });
 
         chatInput.value = '';
 
@@ -364,4 +455,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize sidebar
     updateSidebar();
+
+    // Make sure to call loadPrismJS when the page loads
+    loadPrismJS();
 });
+
+function formatDataFrameHTML(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const table = doc.querySelector('table');
+    
+    if (table) {
+        // Add classes to the table
+        table.classList.add('dataframe');
+        
+        // Style the index column if it exists
+        const firstColumn = table.querySelector('thead th:first-child');
+        if (firstColumn && !firstColumn.textContent.trim()) {
+            firstColumn.classList.add('index_name');
+            table.querySelectorAll('tbody td:first-child').forEach(cell => {
+                cell.classList.add('index_name');
+            });
+        }
+    }
+    
+    return doc.body.innerHTML;
+}

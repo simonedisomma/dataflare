@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 import logging
-from data_binding.connection_factory import ConnectionFactory
+from connections.connection_factory import ConnectionFactory
 
 logger = logging.getLogger(__name__)
 

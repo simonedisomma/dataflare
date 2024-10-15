@@ -1,3 +1,6 @@
+# Agent loop itself
+# Vector search for datasets and datacards
+
 dataflare/
 ├── crawler/
 │   ├── __init__.py

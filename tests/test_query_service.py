@@ -1,7 +1,7 @@
 import unittest
 import logging
-from api.services import QueryService
-from api.query import QueryModel
+from services.query import QueryService
+from models.query import QueryModel
 from utils.config_loader import load_dataset_definition, load_config
 import json
 

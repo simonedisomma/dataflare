@@ -4,7 +4,7 @@ class ConnectionFactory:
     @staticmethod
     def create_connection(db_type: str, config: Dict[str, Any]):
         if db_type == 'duckdb':
-            from data_binding.duckdb import DuckDBConnectionManager
+            from connections.duckdb import DuckDBConnectionManager
             return DuckDBConnectionManager(config)
         # Add other database types here as needed
         else:

@@ -1,9 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 from app import app, get_connection_manager
-from data_binding.database_engine import ConnectionManager
+from connections.database_engine import ConnectionManager
 import yaml
-from api.services import QueryService, DatacardService
+from services.query import QueryService, DatacardService
 import json
 
 class MockConnectionManager(ConnectionManager):

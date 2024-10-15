@@ -5,7 +5,7 @@ import os
 from tqdm import tqdm
 from importlib.util import spec_from_file_location, module_from_spec
 from workflow_manager.manager import WorkflowManager
-from data_binding.database_engine import ConnectionManager
+from connections.database_engine import ConnectionManager
 from app import start_server, stop_server
 from utils.config_loader import load_config
 
